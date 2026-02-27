@@ -316,6 +316,23 @@ app.post("/search", {
 });
 ```
 
+#### Standard Schema compatibility
+
+`body` and `query` configs accept any [Standard Schema v1](https://standardschema.dev/) compatible library — Zod, Valibot, ArkType, and others work out of the box:
+
+```ts
+import { z } from "zod"; // or valibot, arktype, etc.
+
+app.post("/users", {
+  body: z.object({ name: z.string().min(1), age: z.number().optional() }),
+}, (ctx) => {
+  // ctx.validBody is typed as { name: string; age?: number }
+  return ctx.json({ name: ctx.validBody.name });
+});
+```
+
+Crumb's own `v.*` schemas also implement the Standard Schema interface, so they are interchangeable with third-party schemas. When using a third-party schema, OpenAPI request body documentation is skipped (those schemas do not implement `toJsonSchema()`).
+
 When using the route config, types flow through to the RPC client — `$post({ json: ... })` will require the correct body shape, and `$get({ query: ... })` will require the correct query keys (see [RPC Client](#rpc-client)).
 
 If validation fails, the default error handler returns a 400 response with detailed issues:
@@ -808,7 +825,7 @@ const spec = app.openapi({ title: "My API", version: "1.0.0", description: "..."
 | `tags` | `string[]` | Group operations in the UI |
 | `operationId` | `string` | Unique operation identifier |
 | `deprecated` | `boolean` | Mark the operation as deprecated |
-| `response` | `Schema` or `{ [status]: Schema }` | Response schema(s) |
+| `response` | `{ toJsonSchema() }` or `{ [status]: { toJsonSchema() } }` | Response schema(s) for OpenAPI — any schema with `toJsonSchema()` |
 
 **Schema → JSON Schema mapping:**
 
@@ -918,8 +935,8 @@ const res = await app.request("/users", {
 ### TypeScript Types
 
 ```ts
-import type { ExtractParams, Handler, Middleware, Route, HTTPMethod, SchemaMap, CorsOptions, CompressOptions, CookieOptions, WSHandler, WSData, StreamWriter, SSEWriter, SSEEvent, Infer, ValidationIssue, TypedResponse, InferData, RouteMeta, OpenAPIInfo, SwaggerOptions } from "crumb";
-import { App, v, ValidationError, Schema, cors, compress } from "crumb";
+import type { ExtractParams, Handler, Middleware, Route, HTTPMethod, SchemaMap, CorsOptions, CompressOptions, CookieOptions, WSHandler, WSData, StreamWriter, SSEWriter, SSEEvent, Infer, ValidationIssue, TypedResponse, InferData, RouteMeta, OpenAPIInfo, SwaggerOptions, StandardSchemaV1 } from "crumb";
+import { App, v, ValidationError, Schema, cors, compress, runStandardSchema } from "crumb";
 import { createClient, ClientResponse } from "crumb/client";
 
 // Extracts typed params from a path literal
@@ -1013,8 +1030,20 @@ type RouteMeta = {
   tags?: string[];
   deprecated?: boolean;
   operationId?: string;
-  response?: Schema<any> | Record<number, Schema<any>>;
+  response?: { toJsonSchema(): Record<string, unknown> } | Record<number, { toJsonSchema(): Record<string, unknown> }>;
 };
+
+// Standard Schema v1 interface — implemented by crumb's Schema<T> and compatible libraries (Zod, Valibot, etc.)
+interface StandardSchemaV1<Input = unknown, Output = Input> {
+  readonly "~standard": {
+    readonly version: 1;
+    readonly vendor: string;
+    readonly validate: (value: unknown) => { value: Output } | { issues: ReadonlyArray<{ message: string; path?: ReadonlyArray<PropertyKey | { key: PropertyKey }> }> };
+  };
+}
+
+// Run a StandardSchemaV1-compatible schema, throws ValidationError on failure
+function runStandardSchema<T>(schema: StandardSchemaV1<unknown, T>, value: unknown): Promise<T>;
 
 type OpenAPIInfo = {
   title: string;
