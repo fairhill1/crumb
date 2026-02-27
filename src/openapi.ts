@@ -1,5 +1,3 @@
-import { Schema } from "./validator";
-
 export type OpenAPIInfo = {
   title: string;
   version: string;
@@ -7,17 +5,20 @@ export type OpenAPIInfo = {
   [key: string]: unknown;
 };
 
+/** Any schema that can produce a JSON Schema object for OpenAPI. */
+export type JsonSchemaProvider = { toJsonSchema(): Record<string, unknown> };
+
 export type RouteOpenAPIMeta = {
   method: string;
   path: string;
-  bodySchema: Schema<any> | null;
-  querySchema: Schema<any> | null;
+  bodySchema: JsonSchemaProvider | null;
+  querySchema: JsonSchemaProvider | null;
   summary?: string;
   description?: string;
   tags?: string[];
   deprecated?: boolean;
   operationId?: string;
-  response?: Schema<any> | Record<number, Schema<any>>;
+  response?: JsonSchemaProvider | Record<number, JsonSchemaProvider>;
 };
 
 function crumbPathToOpenAPI(path: string): string {
@@ -93,16 +94,16 @@ export function buildOpenAPISpec(
     }
 
     const responses: Record<string, unknown> = {};
-    if (meta.response instanceof Schema) {
+    if (meta.response && "toJsonSchema" in meta.response) {
       responses["200"] = {
         description: "OK",
-        content: { "application/json": { schema: meta.response.toJsonSchema() } },
+        content: { "application/json": { schema: (meta.response as JsonSchemaProvider).toJsonSchema() } },
       };
     } else if (meta.response) {
-      for (const [status, schema] of Object.entries(meta.response as Record<number, Schema<any>>)) {
+      for (const [status, schema] of Object.entries(meta.response as Record<number, JsonSchemaProvider>)) {
         responses[status] = {
           description: STATUS_DESCRIPTIONS[Number(status)] ?? "Response",
-          content: { "application/json": { schema: (schema as Schema<any>).toJsonSchema() } },
+          content: { "application/json": { schema: schema.toJsonSchema() } },
         };
       }
     } else {

@@ -1,3 +1,39 @@
+// ── Standard Schema v1 interface ─────────────────────────────────────
+// https://standardschema.dev
+
+export interface StandardSchemaV1<Input = unknown, Output = Input> {
+  readonly "~standard": {
+    readonly version: 1;
+    readonly vendor: string;
+    readonly validate: (
+      value: unknown,
+    ) => StandardSchemaV1.Result<Output> | Promise<StandardSchemaV1.Result<Output>>;
+    readonly types?: StandardSchemaV1.Types<Input, Output> | undefined;
+  };
+}
+
+export declare namespace StandardSchemaV1 {
+  type Result<Output> = SuccessResult<Output> | FailureResult;
+  interface SuccessResult<Output> {
+    readonly value: Output;
+    readonly issues?: undefined;
+  }
+  interface FailureResult {
+    readonly issues: ReadonlyArray<Issue>;
+  }
+  interface Issue {
+    readonly message: string;
+    readonly path?: ReadonlyArray<PropertyKey | PathSegment> | undefined;
+  }
+  interface PathSegment {
+    readonly key: PropertyKey;
+  }
+  interface Types<Input, Output> {
+    readonly input: Input;
+    readonly output: Output;
+  }
+}
+
 // ── Validation Issue & Error ──────────────────────────────────────────
 
 export type ValidationIssue = { path: string; message: string };
@@ -14,7 +50,7 @@ export class ValidationError extends Error {
 
 // ── Abstract Schema Base ─────────────────────────────────────────────
 
-export abstract class Schema<T> {
+export abstract class Schema<T> implements StandardSchemaV1<T, T> {
   /** Phantom field used by `Infer<S>` — never set at runtime. */
   declare readonly _output: T;
 
@@ -22,6 +58,28 @@ export abstract class Schema<T> {
 
   abstract parse(data: unknown, path?: string): T;
   abstract toJsonSchema(): Record<string, unknown>;
+
+  get "~standard"(): StandardSchemaV1<T, T>["~standard"] {
+    return {
+      version: 1,
+      vendor: "crumb",
+      validate: (value: unknown): StandardSchemaV1.Result<T> => {
+        try {
+          return { value: this.parse(value) };
+        } catch (err) {
+          if (err instanceof ValidationError) {
+            return {
+              issues: err.issues.map((i) => ({
+                message: i.message,
+                path: i.path ? [{ key: i.path }] : undefined,
+              })),
+            };
+          }
+          throw err;
+        }
+      },
+    };
+  }
 
   message(msg: string): this {
     this._customMessage = msg;
@@ -48,6 +106,27 @@ export abstract class Schema<T> {
 // ── Infer helper type ────────────────────────────────────────────────
 
 export type Infer<S extends Schema<any>> = S["_output"];
+
+// ── Standard Schema runner ───────────────────────────────────────────
+
+export async function runStandardSchema<T>(
+  schema: StandardSchemaV1<unknown, T>,
+  value: unknown,
+): Promise<T> {
+  const result = await schema["~standard"].validate(value);
+  if (result.issues) {
+    throw new ValidationError(
+      result.issues.map((issue) => {
+        const path =
+          issue.path
+            ?.map((seg) => (typeof seg === "object" ? String(seg.key) : String(seg)))
+            .join(".") ?? "";
+        return { path, message: issue.message };
+      }),
+    );
+  }
+  return result.value as T;
+}
 
 // ── Optional / Nullable wrappers ─────────────────────────────────────
 

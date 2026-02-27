@@ -8,5 +8,5 @@ export type { CompressOptions } from "./compress";
 export { cors } from "./cors";
 export type { CorsOptions } from "./cors";
 export type { ExtractParams, Handler, Middleware, Route, HTTPMethod, WSHandler, WSData, TypedResponse, InferData, SchemaMap } from "./types";
-export { v, ValidationError, Schema, CoercedStringSchema, CoercedNumberSchema, CoercedBooleanSchema } from "./validator";
-export type { Infer, ValidationIssue } from "./validator";
+export { v, ValidationError, Schema, CoercedStringSchema, CoercedNumberSchema, CoercedBooleanSchema, runStandardSchema } from "./validator";
+export type { Infer, ValidationIssue, StandardSchemaV1 } from "./validator";
